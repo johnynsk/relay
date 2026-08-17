@@ -1,0 +1,7 @@
+version: "3"
+
+tasks:
+  deploy:
+    desc: Deploy relay configuration
+    cmds:
+      - ansible-playbook -i inventory.yml playbooks/site.yml

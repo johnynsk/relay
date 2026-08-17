@@ -1,0 +1,13 @@
+[Unit]
+Description=Socat {{ protocol | upper }} relay {{ relay.name }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/socat {{ protocol | upper }}4-LISTEN:{{ relay.relay_listen_port }},reuseaddr,fork {{ protocol | upper }}4:{{ relay.relay_backend_host }}:{{ relay.relay_backend_port }}
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+#!/sbin/openrc-run
+
+name="socat-{{ relay_name }}-{{ relay_protocol }}"
+description="Socat {{ relay_protocol | upper }} relay {{ relay_name }}"
+
+command="/usr/bin/socat"
+command_args="{{ relay_protocol | upper }}4-LISTEN:{{ relay_listen_port }},reuseaddr,fork {{ relay_protocol | upper }}4:{{ relay_backend_host }}:{{ relay_backend_port }}"
+
+command_background="yes"
+pidfile="/run/${RC_SVCNAME}.pid"
+
+depend() {
+    need net
+    after firewall
+}

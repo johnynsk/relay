@@ -1,0 +1,125 @@
+---
+- name: Install socat
+  ansible.builtin.package:
+    name: socat
+    state: present
+
+- name: Show configured relays
+  ansible.builtin.debug:
+    var: relays
+
+- name: Detect init system
+  ansible.builtin.set_fact:
+    relay_init_system: >-
+      {{
+        'openrc'
+        if ansible_facts.distribution == 'Alpine'
+        else ansible_service_mgr
+      }}
+
+- name: Show detected init system
+  ansible.builtin.debug:
+    msg:
+      - "Distribution: {{ ansible_facts.distribution }}"
+      - "Ansible service manager: {{ ansible_service_mgr }}"
+      - "Relay init system: {{ relay_init_system }}"
+
+- name: Validate supported init system
+  ansible.builtin.assert:
+    that:
+      - relay_init_system in ['systemd', 'openrc']
+    fail_msg: >-
+      Unsupported init system '{{ relay_init_system }}'.
+      Supported systems are systemd and OpenRC.
+
+# -------------------------------------------------------------------
+# systemd
+# -------------------------------------------------------------------
+
+- name: Install systemd units
+  ansible.builtin.template:
+    src: socat-relay.service.j2
+    dest: "/etc/systemd/system/socat-{{ relay.name }}-{{ protocol }}.service"
+    mode: "0644"
+  loop: "{{ relays | subelements('protocols') }}"
+  loop_control:
+    label: "{{ relay.name }}-{{ protocol }}"
+  vars:
+    relay: "{{ item.0 }}"
+    protocol: "{{ item.1 }}"
+    relay_name: "{{ relay.name }}"
+    relay_protocol: "{{ protocol }}"
+    relay_listen_port: "{{ relay.relay_listen_port }}"
+    relay_backend_host: "{{ relay.relay_backend_host }}"
+    relay_backend_port: "{{ relay.relay_backend_port }}"
+  when: relay_init_system == 'systemd'
+  notify:
+    - daemon reload
+    - restart systemd relay instances
+
+- name: Start and enable systemd relay instances
+  ansible.builtin.systemd_service:
+    name: "socat-{{ relay.name }}-{{ protocol }}"
+    enabled: true
+    state: started
+  loop: "{{ relays | subelements('protocols') }}"
+  loop_control:
+    label: "{{ relay.name }}-{{ protocol }}"
+  vars:
+    relay: "{{ item.0 }}"
+    protocol: "{{ item.1 }}"
+  when: relay_init_system == 'systemd'
+
+# -------------------------------------------------------------------
+# OpenRC
+# -------------------------------------------------------------------
+
+- name: Install OpenRC init scripts
+  ansible.builtin.template:
+    src: socat-relay.openrc.j2
+    dest: "/etc/init.d/socat-{{ relay.name }}-{{ protocol }}"
+    mode: "0755"
+  loop: "{{ relays | subelements('protocols') }}"
+  loop_control:
+    label: "{{ relay.name }}-{{ protocol }}"
+  vars:
+    relay: "{{ item.0 }}"
+    protocol: "{{ item.1 }}"
+    relay_name: "{{ relay.name }}"
+    relay_protocol: "{{ protocol }}"
+    relay_listen_port: "{{ relay.relay_listen_port }}"
+    relay_backend_host: "{{ relay.relay_backend_host }}"
+    relay_backend_port: "{{ relay.relay_backend_port }}"
+  when: relay_init_system == 'openrc'
+  notify:
+    - restart OpenRC relay instances
+
+- name: Ensure OpenRC default runlevel directory exists
+  ansible.builtin.file:
+    path: /etc/runlevels/default
+    state: directory
+    mode: "0755"
+  when: relay_init_system == 'openrc'
+
+- name: Enable OpenRC relay instances
+  ansible.builtin.command:
+    cmd: "rc-update add socat-{{ relay.name }}-{{ protocol }} default"
+  loop: "{{ relays | subelements('protocols') }}"
+  loop_control:
+    label: "{{ relay.name }}-{{ protocol }}"
+  vars:
+    relay: "{{ item.0 }}"
+    protocol: "{{ item.1 }}"
+  when: relay_init_system == 'openrc'
+  changed_when: false
+
+- name: Start OpenRC relay instances
+  ansible.builtin.command:
+    cmd: "rc-service socat-{{ relay.name }}-{{ protocol }} start"
+  loop: "{{ relays | subelements('protocols') }}"
+  loop_control:
+    label: "{{ relay.name }}-{{ protocol }}"
+  vars:
+    relay: "{{ item.0 }}"
+    protocol: "{{ item.1 }}"
+  when: relay_init_system == 'openrc'
